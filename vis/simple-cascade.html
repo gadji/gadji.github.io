@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Simple Cascade Algorithm Visualization</title>
+    <meta name="description" content="Simple Cascade Algorithm Visualization">
+    <meta name="author" content="David Adjiashvili">
+    <link href="css/bootstrap.min.css" rel="stylesheet">
+    <link href="css/simple-cascade.css" rel="stylesheet">
+</head>
+
+<body>
+<br/>
+<div id='caption'></div>
+<div id='chart'></div>
+<div id='texts'></div>
+<div id='controls' style='margin: 20px'>
+    <button id="btnNext" onclick="onClickNext()" type="button" class="btn btn-primary btn-lg">Next</button>
+    <button id="btnRun" onclick="onClickRun()" type="button" class="btn btn-primary btn-lg" style='margin-left: 10px;'>Run</button>
+    <button id="btnReload" onclick="location.reload()" type="button" class="btn btn-primary btn-lg" style='margin-left: 10px;'>Reload</button>
+</div>
+
+<script src="js/d3.min.js"></script>
+<script src="js/d3.tip.v0.6.3.js"></script>
+<script src="js/lodash.min.js"></script>
+<script src="js/simple-cascade.js"></script>
+
+<script>
+var exports = (function () {
+    var w = window,
+            d = document,
+            e = d.documentElement,
+            g = d.getElementsByTagName('body')[0],
+            windowWidth = w.innerWidth || e.clientWidth || g.clientWidth;
+
+    var SVG_MARGIN_TOP_BOTTOM = 20, SVG_MARGIN_LEFT_RIGHT = 40,
+            SVG_MAX_WIDTH = 2000,
+            SVG_WIDTH = (windowWidth > 0) ? (windowWidth < SVG_MAX_WIDTH ? (windowWidth - 30) : SVG_MAX_WIDTH) : SVG_MAX_WIDTH,
+            SVG_HEIGHT = SVG_WIDTH > 1200 ? 500 : 400;
+
+    var margin = {top: SVG_MARGIN_TOP_BOTTOM, right: SVG_MARGIN_LEFT_RIGHT, bottom: SVG_MARGIN_TOP_BOTTOM, left: SVG_MARGIN_LEFT_RIGHT},
+            width = SVG_WIDTH - margin.left - margin.right,
+            height = SVG_HEIGHT - margin.top - margin.bottom;
+
+    var x = d3.scale.ordinal()
+            .rangeRoundBands([0, width], .125); // proportion of bar width to space in between bars
+
+    var y = d3.scale.linear()
+            .range([height, 0]);
+
+    var tip = d3.tip()
+            .attr('class', 'd3-tip')
+            .offset([-10, 0])
+            .html(function (d) {
+                return "<strong>Resistance:</strong> <span style='color:red'>" + d.resistance +
+                        (d.dead ? "&nbsp;(R.I.P.)" : "") + "</span>";
+            });
+
+    var tipDelta = d3.tip()
+            .attr('class', 'd3-tip')
+            .offset([-10, 0])
+            .html(function (d) {
+                return "<strong>Delta:</strong> <span style='color:red'>" + d.delta + "</span>";
+            });
+
+    var svg;
+    var drawnOnce = false;
+    function updateChart(data, threshold, maxPossibleResistance) {
+        function dataKeyFunction(d) {
+            return d.id;
+        }
+
+        if (!drawnOnce) {
+            svg = d3.select("#chart")
+                    .append("svg")
+                    .attr("width", width + margin.left + margin.right)
+                    .attr("height", height + margin.top + margin.bottom)
+                    .append("g")
+                    .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+            svg.call(tip);
+            svg.call(tipDelta);
+
+            x.domain(data.map(function (d) {
+                return d.id2;
+            }));
+            y.domain([0, maxPossibleResistance]);
+
+            var xAxis = d3.svg.axis()
+                    .scale(x)
+                    .orient("bottom");
+
+            var yAxis = d3.svg.axis()
+                    .scale(y)
+                    .orient("left")
+                    .tickFormat(d3.format(".1"));
+
+            // add X axis caption
+            svg.append("g")
+                    .attr("class", "x axis")
+                    .attr("transform", "translate(0," + height + ")")
+                    .call(xAxis);
+
+            // add Y axis caption
+            svg.append("g")
+                    .attr("class", "y axis")
+                    .call(yAxis)
+                    .append("text")
+                    .attr("transform", "rotate(-90)")
+                    .attr("y", 6)
+                    .attr("dy", ".71em")
+                    .style("text-anchor", "end")
+                    .text("Resistance");
+            drawnOnce = true;
+        }
+
+        var svgData = svg.selectAll(".bar").data(data, dataKeyFunction);
+        var svgData2 = svg.selectAll(".bar_delta").data(data, dataKeyFunction);
+        var enter = svgData.enter();
+        var enter2 = svgData2.enter();
+
+        enter.append("rect")
+                .attr("class", function (d) {
+                    return d.dead ? "bar-dead" : "bar";
+                })
+                .attr("x", function (d) {
+                    return x(d.id2);
+                })
+                .attr("width", x.rangeBand())
+                .attr("y", function (d) {
+                    //                console.log("y: " + y(d.resistance) + " / height: " + (height - y(d.resistance)));
+                    return y(d.resistance);
+                })
+                .attr("height", function (d) {
+                    return height - y(d.resistance);
+                })
+                .on('mouseover', tip.show)
+                .on('mouseout', tip.hide);
+
+        enter2.append("rect")
+                .attr("class", "bar_delta")
+                .attr("x", function (d) {
+                    return x(d.id2);
+                })
+                .attr("width", x.rangeBand())
+                .attr("y", function (d) {
+                    return y(d.resistance + d.delta);
+                })
+                .attr("height", function (d) {
+                    return height - y(d.delta);
+                })
+                .on('mouseover', tipDelta.show)
+                .on('mouseout', tipDelta.hide);
+
+        // EXIT
+        svgData.exit().remove();
+        svgData2.exit().remove();
+
+        function drawLine(percent) {
+            var lineFunction = d3.svg.line()
+                    .x(function (d) {
+                        return d.x;
+                    })
+                    .y(function (d) {
+                        return d.y;
+                    })
+                    .interpolate("linear");
+
+            svg.selectAll(".threshold-line").remove();
+
+            var level = (SVG_HEIGHT - (SVG_MARGIN_TOP_BOTTOM * 2)) / maxPossibleResistance * (maxPossibleResistance - percent);
+            svg.append("path")
+                    .attr("d", lineFunction([
+                        {x: 0, y: level},
+                        {x: SVG_WIDTH - 95, y: level}
+                    ]))
+                    .attr('class', 'threshold-line')
+                    .attr("stroke", "red")
+                    .attr("stroke-dasharray", "3,3")
+                    .attr("stroke-width", 1)
+                    .attr("fill", "none");
+        }
+
+        drawLine(threshold);
+    }
+
+    function setCaption(caption) {
+        var selection = d3.select("#caption");
+        selection.selectAll("p").remove();
+        if (caption) {
+            selection.append("p").attr("class", "text-p").text(caption);
+        }
+    }
+
+    function updateTexts(data, indexForDisplay, currentDeltas, usedBudget, accumulatedBudget) {
+        // budgets
+        var budgetsStr = "", i = 0;
+        _.forEach(data.budgets, function (elem) {
+            var highlight = (i == (indexForDisplay - 1));
+            budgetsStr += (budgetsStr ? ", " : "") +
+                    (highlight ? "<span class='text-span-red'>" : "") + elem + (highlight ? "</span>" : "");
+            i++;
+        });
+        budgetsStr = "Budgets: " + budgetsStr;
+
+        // budgets user / accumulated
+        var budgetUsedStr = "Remaining budget: " + accumulatedBudget + (usedBudget == -1 ? "" : " (used " + usedBudget + ")");
+
+        // deltas
+        var currentDeltasStr = "";
+        if (!currentDeltas) {
+            currentDeltasStr += "Current deltas: -";
+        }
+        else {
+            _.forEach(currentDeltas, function (elem) {
+                currentDeltasStr += (currentDeltasStr ? ", " : "") + elem;
+                i++;
+            });
+            currentDeltasStr = "Current deltas: " + currentDeltasStr;
+        }
+
+        var selection = d3.select("#texts");
+        selection.selectAll("div").remove();
+        var div = selection.append("div").attr("class", "alert alert-warning my-elert-div");
+        div.append("p").attr("class", "text-p").html("Iteration: " + indexForDisplay);
+        div.append("p").attr("class", "text-p").html(budgetsStr);
+        div.append("p").attr("class", "text-p").html(budgetUsedStr);
+        div.append("p").attr("class", "text-p").html(currentDeltasStr);
+    }
+
+    /**
+     * From: data = {threshold: threshold, resistances: [10, 20, 30], budgets: budgets} + deltas = [[0, 0, 1], [0,2, 1], ...]
+     * To:     [{id: index_in_original_input, resistance: 10, delta: 0}, ...]
+     */
+    function convertForChart(data, deltas) {
+        var result = [];
+        for (var i = 0; i < data.resistances.length; i++) {
+            result.push({id: i, id2: (i + 1), resistance: data.resistances[i], delta: deltas ? deltas[i] : 0, dead: data.dead[i]});
+        }
+        return result;
+    }
+
+    var callsToDraw = 1;
+    function draw(data, indexForDisplay, deltas, usedBudget, accumulatedBudget) {
+        // draw texts
+        updateTexts(data, indexForDisplay, deltas, usedBudget, accumulatedBudget);
+
+        // draw chart
+        var dataForChart = convertForChart(data, deltas);
+
+        var n = getN();
+        _.forEach(dataForChart, function (e) {
+            e.id += (callsToDraw * n);
+        });
+        updateChart(dataForChart, data.threshold, data.maxPossibleResistance);
+        callsToDraw++;
+    }
+
+    function getN() {
+        return rawData && rawData.resistances ? rawData.resistances.length : 0;
+    }
+
+    var deltas, index, rawData;
+    var deltasForNextTime = null;
+    var usedBudget, accumulatedBudget;
+    function init(data) {
+        rawData = data;
+        deltas = algorithm.calculateAllocation(data.resistancesAdjusted, data.budgets);
+        if (deltas.length == 0) {
+            error("In this instance no one can be saved.");
+            return;
+        }
+        index = -1;
+        usedBudget = 0;
+        accumulatedBudget = 0;
+        setCaption(data.caption);
+        next();
+    }
+
+    function updateBudgetCounts(indexForDisplay, deltasForNextTime) {
+        if (!deltasForNextTime) {
+            accumulatedBudget += budgets[indexForDisplay - 1];
+            usedBudget = -1;
+        } else {
+            usedBudget = 0;
+            _.forEach(deltasForNextTime, function (e) {
+                usedBudget += e;
+            });
+            accumulatedBudget -= usedBudget;
+        }
+    }
+
+    function testFinished(deltasAdded) {
+        if (index >= getN()) {
+            return true;
+        }
+        if (deltasAdded) {
+            return false;
+        }
+        for (var i = 0; i < rawData.resistances.length; i++) {
+            if (!rawData.dead[i] && rawData.resistances[i] < rawData.threshold) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    function next() {
+        if (testFinished(deltasForNextTime == null)) {
+            stopRun();
+            return;
+        }
+
+        var indexForDisplay = !deltasForNextTime ? index + 2 : index + 1;
+        updateBudgetCounts(indexForDisplay, deltasForNextTime);
+        draw(rawData, indexForDisplay, deltasForNextTime, usedBudget, accumulatedBudget);
+
+        if (!deltasForNextTime) {
+            index++;
+            deltasForNextTime = deltas[index];
+        }
+        else {
+            (function mergeDeltas() {
+                for (var i = 0; i < rawData.resistances.length; i++) {
+                    rawData.resistances[i] += deltasForNextTime[i];
+                }
+                return i;
+            })();
+
+            // increase the threshold
+            var countDead = 0;
+            for (var i = 0; i < rawData.resistances.length; i++) {
+                if (rawData.threshold > rawData.resistances[i] && !rawData.dead[i]) {
+                    rawData.dead[i] = true;
+                    countDead++;
+                }
+            }
+            rawData.threshold += countDead;
+            deltasForNextTime = null;  // do not increase the index here
+        }
+    }
+
+    var intervalID = null;
+    function stopRun() {
+        if (intervalID) {
+            clearInterval(intervalID);
+            d3.select("#btnRun").text("Run");
+            intervalID = null;
+        }
+    }
+    function startRun(timeMillis) {
+        intervalID = setInterval(function () {
+            if ((index >= getN()) && intervalID) {
+                clearInterval(intervalID);
+            }
+            next();
+        }, timeMillis);
+        d3.select("#btnRun").text("Pause");
+    }
+    function run(timeMillis) {
+        intervalID ? stopRun() : startRun(timeMillis);
+    }
+
+    function error(msg) {
+        var selection = d3.select("#texts");
+        selection.selectAll("p").remove();
+        selection.append("p").attr("class", "alert alert-danger my-elert-div").html("<span class='text-span-red'>" + msg + '</span>');
+        d3.select("#controls").attr("hidden", "true");
+    }
+
+    function splitNumbersList(numbersList, separator) {
+        if (!numbersList) return [];
+        var array = numbersList.split(separator);
+        var result = [];
+        _.forEach(array, function (e) {
+            result.push(parseInt(e));
+        });
+        return result;
+    }
+
+    function getParameterByName(name) {
+        name = name.replace(/[\[]/, "\\\[").replace(/[\]]/, "\\\]");
+        var regexS = "[\\?&]" + name + "=([^&#]*)";
+        var regex = new RegExp(regexS);
+        var results = regex.exec(window.location.href);
+        return (results == null) ? "" : decodeURIComponent(results[1].replace(/\+/g, " "));
+    }
+
+    var threshold, resistances, budgets, caption;
+    /*var onStart = */ (function () {
+        threshold = parseInt(getParameterByName('threshold'));
+        resistances = splitNumbersList(getParameterByName('resistances'), '.');
+        budgets = splitNumbersList(getParameterByName('budgets'), '.');
+        caption = getParameterByName('caption');
+
+        if ((threshold === undefined) || !resistances || !budgets) {
+            error('Must specify 3 parameters: "threshold", "resistances" & "budgets"');
+            return;
+        }
+        if (threshold < 0) {
+            error('"threshold" must be >= 0');
+            return;
+        }
+        if (resistances.length == 0) {
+            error('"resistances" URL parameter not specified');
+            return;
+        }
+        if (budgets.length == 0) {
+            error('"budgets" URL parameter not specified');
+            return;
+        }
+        if (resistances.length != budgets.length) {
+            error('"resistances" and "budgets" parameters must be of the same size, now have ' + resistances.length + ' resistances and ' + budgets.length + ' budgets.');
+            return;
+        }
+        if (resistances.length > 100) {
+            error('The number of resistances should be less then 100');
+            return;
+        }
+        for (var i = 0; i < resistances.length; i++) {
+            if (resistances[i] < 0) {
+                error('The resistances must consist of positive values');
+                return;
+            }
+        }
+
+        // sort
+        resistances.sort(function (a, b) {
+            return a - b;
+        });
+
+        // init dead flags
+        var dead = [];
+        for (i = 0; i < resistances.length; i++) {
+            dead[i] = false;
+        }
+
+        // max height
+        var maxPossibleResistance = Math.max(resistances[resistances.length - 1], threshold + resistances.length);
+
+        // compute adjusted values for the gurmet
+        var resistancesAdjusted = resistances.slice(0);
+        for (i = 0; i < resistancesAdjusted.length; i++) {
+            resistancesAdjusted[i] -= threshold;
+        }
+
+        init({
+            threshold: threshold,
+            maxPossibleResistance: maxPossibleResistance,
+            resistances: resistances,
+            resistancesAdjusted: resistancesAdjusted,
+            dead: dead,
+            budgets: budgets,
+            caption: caption
+        });
+    })();
+
+    // exports
+    return {
+        next: next,
+        run: run
+    };
+})();
+
+function onClickNext() {
+    exports.next();
+}
+function onClickRun() {
+    exports.run(500);
+}
+</script>
+</body>
+</html>
+
