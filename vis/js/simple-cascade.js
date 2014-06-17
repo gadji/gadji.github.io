@@ -24,96 +24,129 @@ var algorithm = (function () {
         return deltas;
 
         function computeDeltas(table, n) {
-            var list = table[n - 1];
+            // retrieve DP table entries for last time point 
+			var list = table[n - 1];
             var deltas = [];
-            for (var i = 0; i < list.length; i++) {
-                var item = list[i];
-                if (item.budget >= 0) {
-                    subCompute(item.list, item.bestIndex);
-                    break;
-                }
-            }
+			var stop = 0;
+            for (var k  = 0; k < list.length; k++) {
+				for (var prevK = 0; prevK <= k; prevK++) {	
+					var item = list[k][prevK];
+					if (item.budget >= 0) {
+						subCompute(item.list, item.bestIndex, prevK);
+						stop = 1;
+						break;						
+					}
+				}
+				if (stop == 1) {
+					break;
+				}
+			}
             return deltas.reverse();
 
-            function subCompute(list, bestIndex) {
+            function subCompute(list, bestIndex, bestPrevIndex) {
+				var listPrev = [];
+				var deltaT = [];
+				//var bestPrevIndex = 0;
+				// compute allocation of budget backwards in time
                 for (var t = n - 2; t >= 0; t--) {
-                    var listPrev = table[t][bestIndex].list;
-                    var deltaT = computeDeltaForT(list, listPrev);
-                    deltas.push(deltaT);
+					// find one previous threshold which leads to optimal threshold in time t
+					listPrev = table[t][bestIndex][bestPrevIndex].list;
+					deltaT = computeDeltaForT(list, listPrev);
+					deltas.push(deltaT);
 
                     list = listPrev;
-                    bestIndex = table[t][bestIndex].bestIndex;
+					bestIndex = bestPrevIndex;
+					bestPrevIndex = table[t][bestIndex][bestPrevIndex].bestIndex;
+					//bestIndex = bestPrevIndex;
                 }
             }
 
             function computeDeltaForT(list, listPrev) {
                 var minLen = list.length;
-                var deltas = [];
+                var deltasForT = [];
                 for (var i = 0; i < n - minLen; i++) {
-                    deltas.push(0);
+                    deltasForT.push(0);
                 }
                 var j = listPrev.length - minLen;
                 for (i = 0; i < minLen; i++) {
-                    deltas.push(list[i] - listPrev[j]);
+                    deltasForT.push(list[i] - listPrev[j]);
                     j++;
                 }
-                return deltas;
+                return deltasForT;
             }
         }
 
         function initializeFirstRow(data, n) {
             var row = [];
+			var element = [];
             for (var i = 0; i < n; i++) {
-                row.push({budget: -1, list: [], bestIndex: 0});
+				element = [];
+				for (var j = 0; j <= i; j++) {
+					element.push({budget: -1, list: [], bestIndex: 0});
+				}
+                row.push(element);
             }
             data = data.sort(function (a, b) {
-                return a - b;
+               return a - b;
             });
-            row[0] = ({budget: 0, list: data, bestIndex: 0});
+            row[0][0] = ({budget: 0, list: data, bestIndex: 0});
             return row;
         }
-
+		
         function computeDpTableEntry(t, k) {
-            var bestRemainingBudget = -1, bestPrevK = 0;
-            var bestRemainingBudgetList = [];
-            for (var prevK = 0; prevK <= k; prevK++) {
-                var prevBudget = dpTable[t - 1][prevK].budget;
-                if (prevBudget < 0) {
-                    continue;
-                }
-                var prevList = dpTable[t - 1][prevK].list;
+			var element = [];
+			for (var smallK = 0; smallK <= k; smallK++) {
+				var bestRemainingBudget = -1, bestPrevK = 0;
+				var bestRemainingResistancesList = [];
+				for (var prevK = 0; prevK <= smallK; prevK++) {
+					/*if (t==4 && k == 15 && smallK == 15 && prevK == 8) {
+						var kitty = 1;
+					}*/
+				
+					var prevBudget = dpTable[t - 1][smallK][prevK].budget;
+					if (prevBudget < 0) {
+						continue;
+					}
+					var prevList = dpTable[t - 1][smallK][prevK].list;
 
-                var index = _.findIndex(prevList, function (a) {
-                    return a >= prevK;
-                });
-                var prefix = [], suffix = [];
-                if (index == -1) {
-                    prefix = prevList.slice(0);
-                    suffix = [];
-                } else {
-                    prefix = prevList.slice(0).splice(0, index);
-                    suffix = prevList.slice(0).splice(index, prevList.length);
-                }
+					var index = _.findIndex(prevList, function (a) {
+						return a >= smallK;
+					});
+					
+					// prefix contains all items with threshold < smallK
+					// suffix contains all items with threshold >= smallK
+					var prefix = [], suffix = [];
+					if (index == -1) {
+						prefix = prevList.slice(0);
+						suffix = [];
+					} else {
+						prefix = prevList.slice(0).splice(0, index);
+						suffix = prevList.slice(0).splice(index, prevList.length);
+					}
 
-                var accumulate = 0;
-                prefix.reverse();
-                for (var i = 0; i < prefix.length - k + prevK; i++) {
-                    accumulate += prevK - prefix[i];
-                }
-                var remainingBudget = budgets[t - 1] + prevBudget - accumulate;
-                if (remainingBudget >= bestRemainingBudget) {
-                    bestRemainingBudget = remainingBudget;
-                    bestPrevK = prevK;
-                    bestRemainingBudgetList = [];
-                    for (i = 0; i < prefix.length - k + prevK; i++) {
-                        bestRemainingBudgetList.push(prevK);
-                    }
-                    bestRemainingBudgetList = bestRemainingBudgetList.slice(0).concat(suffix);
-                }
-            }
-            return {budget: bestRemainingBudget,
-                list: bestRemainingBudgetList,
-                bestIndex: bestPrevK};
+					var accumulate = 0;
+					// reverse list to have smaller resistances first
+					prefix.reverse();
+					// k-smallK items need to get infected, this many need to be pushed to resistance smallK
+					for (var i = 0; i < prefix.length - k + smallK; i++) {
+						accumulate += smallK - prefix[i];
+					}
+					var remainingBudget = budgets[t - 1] + prevBudget - accumulate;
+					if (remainingBudget >= bestRemainingBudget) {
+						bestRemainingBudget = remainingBudget;
+						bestPrevK = prevK;
+						bestRemainingResistancesList = [];
+						for (i = 0; i < prefix.length - k + smallK; i++) {
+							bestRemainingResistancesList.push(smallK);
+						}
+						bestRemainingResistancesList = bestRemainingResistancesList.slice(0).concat(suffix);
+					}
+				}
+				element.push({budget: bestRemainingBudget,
+                list: bestRemainingResistancesList,
+                bestIndex: bestPrevK});
+			}
+			return element;
         }
     }
 
