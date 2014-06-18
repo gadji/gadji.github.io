@@ -49,15 +49,14 @@ var algorithm = (function () {
 				//var bestPrevIndex = 0;
 				// compute allocation of budget backwards in time
                 for (var t = n - 2; t >= 0; t--) {
-					// find one previous threshold which leads to optimal threshold in time t
 					listPrev = table[t][bestIndex][bestPrevIndex].list;
 					deltaT = computeDeltaForT(list, listPrev);
 					deltas.push(deltaT);
 
                     list = listPrev;
+					var tmp = bestIndex;
 					bestIndex = bestPrevIndex;
-					bestPrevIndex = table[t][bestIndex][bestPrevIndex].bestIndex;
-					//bestIndex = bestPrevIndex;
+					bestPrevIndex = table[t][tmp][bestPrevIndex].bestIndex;
                 }
             }
 
