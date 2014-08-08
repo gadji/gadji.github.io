@@ -51,8 +51,10 @@ var exports = (function () {
             .attr('class', 'd3-tip')
             .offset([-10, 0])
             .html(function (d) {
-                return "<strong>Resistance:</strong> <span style='color:red'>" + d.resistance +
-                        (d.dead ? "&nbsp;(R.I.P.)" : "") + "</span>";
+                var txt = d.dead ? 'Dead <br />' : '';
+                txt += '<strong>Resistance:</strong> <span style="color:red">' + d.resistance + '</span>';
+                txt += d.weight ? '<br /><strong>Weight:</strong> <span style="color:red">' + d.weight + '</span>' : '';
+                return txt;
             });
 
     var tipDelta = d3.tip()
@@ -127,7 +129,6 @@ var exports = (function () {
                 })
                 .attr("width", x.rangeBand())
                 .attr("y", function (d) {
-                    //                console.log("y: " + y(d.resistance) + " / height: " + (height - y(d.resistance)));
                     return y(d.resistance);
                 })
                 .attr("height", function (d) {
@@ -135,6 +136,23 @@ var exports = (function () {
                 })
                 .on('mouseover', tip.show)
                 .on('mouseout', tip.hide);
+
+        if (data[0].weight) {
+            text = enter.append('text')
+                    .text(function (d) {
+                        return 'W = ' + d.weight;
+                    })
+                    .attr('x', function (d) {
+                        return 3 + x(d.id2);
+                    })
+                    .attr('y', function (d) {
+                        return y(d.resistance) + 13;
+                    })
+                    .attr('font-size', 12)
+                    .attr('fill', function (d) {
+                        return d.dead ? "white" : "black";
+                    });
+        }
 
         enter2.append("rect")
                 .attr("class", "bar_delta")
@@ -234,7 +252,14 @@ var exports = (function () {
     function convertForChart(data, deltas) {
         var result = [];
         for (var i = 0; i < data.resistances.length; i++) {
-            result.push({id: i, id2: (i + 1), resistance: data.resistances[i], delta: deltas ? deltas[i] : 0, dead: data.dead[i]});
+            result.push({
+                id: i,
+                id2: (i + 1),
+                resistance: data.resistances[i],
+                delta: deltas ? deltas[i] : 0,
+                dead: data.dead[i],
+                weight: data.weights ? data.weights[i] : null
+            });
         }
         return result;
     }
@@ -264,7 +289,7 @@ var exports = (function () {
     var usedBudget, accumulatedBudget;
     function init(data) {
         rawData = data;
-        deltas = algorithm.calculateAllocation(data.resistancesAdjusted, data.budgets);
+        deltas = algorithm.calculateAllocation(data.resistancesAdjusted, data.budgets, data.weights);
         if (deltas.length == 0) {
             error("In this instance no one can be saved.");
             return;
@@ -368,7 +393,7 @@ var exports = (function () {
     }
 
     function splitNumbersList(numbersList, separator) {
-        if (!numbersList) return [];
+        if (!numbersList) return null;
         var array = numbersList.split(separator);
         var result = [];
         _.forEach(array, function (e) {
@@ -385,11 +410,12 @@ var exports = (function () {
         return (results == null) ? "" : decodeURIComponent(results[1].replace(/\+/g, " "));
     }
 
-    var threshold, resistances, budgets, caption;
+    var threshold, resistances, budgets, caption, weights;
     /*var onStart = */ (function () {
         threshold = parseInt(getParameterByName('threshold'));
         resistances = splitNumbersList(getParameterByName('resistances'), '.');
         budgets = splitNumbersList(getParameterByName('budgets'), '.');
+        weights = splitNumbersList(getParameterByName('weights'), '.');
         caption = getParameterByName('caption');
 
         if ((threshold === undefined) || !resistances || !budgets) {
@@ -400,15 +426,15 @@ var exports = (function () {
             error('"threshold" must be >= 0');
             return;
         }
-        if (resistances.length == 0) {
+        if (resistances.length === 0) {
             error('"resistances" URL parameter not specified');
             return;
         }
-        if (budgets.length == 0) {
+        if (budgets.length === 0) {
             error('"budgets" URL parameter not specified');
             return;
         }
-        if (resistances.length != budgets.length) {
+        if (resistances.length !== budgets.length) {
             error('"resistances" and "budgets" parameters must be of the same size, now have ' + resistances.length + ' resistances and ' + budgets.length + ' budgets.');
             return;
         }
@@ -416,9 +442,17 @@ var exports = (function () {
             error('The number of resistances should be less then 100');
             return;
         }
-        for (var i = 0; i < resistances.length; i++) {
-            if (resistances[i] < 0) {
-                error('The resistances must consist of positive values');
+        if (_.reduce(resistances, function (result, item) {return (result + (item < 0 ? 1 : 0));}, 0) > 0) {
+            error('The resistances must consist of positive values');
+            return;
+        }
+        if (weights) {
+            if (weights.length !== resistances.length) {
+                error('"resistances" and "weights" parameters must be of the same size, now have ' + resistances.length + ' resistances and ' + weights.length + ' weights.');
+                return;
+            }
+            if (_.reduce(weights, function (result, item) {return (result + (item < 0 ? 1 : 0));}, 0) > 0) {
+                error('The weights must consist of positive values');
                 return;
             }
         }
@@ -447,6 +481,7 @@ var exports = (function () {
             threshold: threshold,
             maxPossibleResistance: maxPossibleResistance,
             resistances: resistances,
+            weights: weights,
             resistancesAdjusted: resistancesAdjusted,
             dead: dead,
             budgets: budgets,

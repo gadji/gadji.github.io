@@ -5,7 +5,7 @@ var algorithm = (function () {
      * @param budgets - array of integers
      * @returns {deltas} - array of arrays of integers
      */
-    function calculateAllocation(resistances, budgets) {
+    function calculateAllocation(resistances, budgets, weights) {
         var n = resistances.length;
         var dpTable = [initializeFirstRow(resistances, n)]; // in t,k - store partial solution (list of n resistances - one per person)
 
