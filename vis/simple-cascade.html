@@ -236,12 +236,23 @@ var exports = (function () {
             currentDeltasStr = "Current deltas: " + currentDeltasStr;
         }
 
+        var totalWeightStillAlive = "";
+        if (data.weights) {
+            var aliveWeightSum = _.reduce(data.weights, function (total, elem, key) {
+                return total + (data.dead[key] ? 0 : elem);
+            }, 0);
+            totalWeightStillAlive += "Total weight of alive: " + aliveWeightSum;
+        }
+
         var selection = d3.select("#texts");
         selection.selectAll("div").remove();
         var div = selection.append("div").attr("class", "alert alert-warning my-elert-div");
         div.append("p").attr("class", "text-p").html("Iteration: " + indexForDisplay);
         div.append("p").attr("class", "text-p").html(budgetsStr);
         div.append("p").attr("class", "text-p").html(budgetUsedStr);
+        if (data.weights) {
+            div.append("p").attr("class", "text-p").html(totalWeightStillAlive);
+        }
         div.append("p").attr("class", "text-p").html(currentDeltasStr);
     }
 
